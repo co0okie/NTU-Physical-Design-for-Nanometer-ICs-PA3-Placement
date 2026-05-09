@@ -33,7 +33,7 @@ class BaseFunction {
     virtual const double &operator()(const std::vector<Point2<double>> &input) = 0;
 
     // Backward pass, compute the gradient of the function
-    virtual const std::vector<Point2<double>> &Backward() = 0;
+    virtual const std::vector<Point2<double>> &Backward(const std::vector<Point2<double>> &input) = 0;
 
    protected:
     /////////////////////////////////
@@ -63,14 +63,13 @@ class ExampleFunction : public BaseFunction {
     /////////////////////////////////
 
     const double &operator()(const std::vector<Point2<double>> &input) override;
-    const std::vector<Point2<double>> &Backward() override;
+    const std::vector<Point2<double>> &Backward(const std::vector<Point2<double>> &input) override;
 
    private:
     /////////////////////////////////
     // Data members
     /////////////////////////////////
 
-    std::vector<Point2<double>> input_;  // Cache the input for backward pass
     Placement &placement_;
 };
 
@@ -80,12 +79,25 @@ class ExampleFunction : public BaseFunction {
 class Wirelength : public BaseFunction {
     // TODO: Implement the wirelength function, add necessary data members for caching
    public:
+    Wirelength(Placement &placement, double gamma);
+
     /////////////////////////////////
     // Methods
     /////////////////////////////////
 
     const double &operator()(const std::vector<Point2<double>> &input) override;
-    const std::vector<Point2<double>> &Backward() override;
+    const std::vector<Point2<double>> &Backward(const std::vector<Point2<double>> &input) override;
+
+    double gamma; // the smaller gamma is, the more accurate to HPWL
+
+   private:
+    Placement &placement_;
+    vector<Point2<double>> max_of_net;
+    vector<Point2<double>> min_of_net;
+    vector<Point2<double>> max_wa_of_net;
+    vector<Point2<double>> min_wa_of_net;
+    vector<Point2<double>> denominator_max_of_net;
+    vector<Point2<double>> denominator_min_of_net;
 };
 
 /**
@@ -99,7 +111,7 @@ class Density : public BaseFunction {
     /////////////////////////////////
 
     const double &operator()(const std::vector<Point2<double>> &input) override;
-    const std::vector<Point2<double>> &Backward() override;
+    const std::vector<Point2<double>> &Backward(const std::vector<Point2<double>> &input) override;
 };
 
 /**
@@ -119,7 +131,7 @@ class ObjectiveFunction : public BaseFunction {
     /////////////////////////////////
 
     const double &operator()(const std::vector<Point2<double>> &input) override;
-    const std::vector<Point2<double>> &Backward() override;
+    const std::vector<Point2<double>> &Backward(const std::vector<Point2<double>> &input) override;
 
    private:
     Wirelength wirelength_;

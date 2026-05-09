@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <vector>
 #include <set>
+#include <cstdlib>
 
 #include "ObjectiveFunction.h"
 #include "Optimizer.h"
@@ -13,30 +14,6 @@ GlobalPlacer::GlobalPlacer(Placement &placement)
 }
 
 void GlobalPlacer::place() {
-    ////////////////////////////////////////////////////////////////////
-    // This section is an example for analytical methods.
-    // The objective is to minimize the following function:
-    //      f(x,y) = 3*x^2 + 2*x*y + 2*y^2 + 7
-    //
-    // If you use other methods, you can skip and delete it directly.
-    ////////////////////////////////////////////////////////////////////
-    std::vector<Point2<double>> t(1);                   // Optimization variables (in this example, there is only one t)
-    ExampleFunction foo(_placement);                    // Objective function
-    const double kAlpha = 0.01;                         // Constant step size
-    SimpleConjugateGradient optimizer(foo, t, kAlpha);  // Optimizer
-
-    // Set initial point
-    t[0] = 4.;  // This set both t[0].x and t[0].y to 4.
-
-    // Initialize the optimizer
-    optimizer.Initialize();
-
-    // Perform optimization, the termination condition is that the number of iterations reaches 100
-    // TODO: You may need to change the termination condition, which is determined by the overflow ratio.
-    for (size_t i = 0; i < 100; ++i) {
-        optimizer.Step();
-        printf("iter = %3lu, f = %9.4f, x = %9.4f, y = %9.4f\n", i, foo(t), t[0].x, t[0].y);
-    }
 
     ////////////////////////////////////////////////////////////////////
     // Global placement algorithm
@@ -45,6 +22,36 @@ void GlobalPlacer::place() {
     // TODO: Implement your global placement algorithm here.
     const size_t num_modules = _placement.numModules();  // You may modify this line.
     std::vector<Point2<double>> positions(num_modules);  // Optimization variables (positions of modules). You may modify this line.
+    for (unsigned i = 0; i < num_modules; i++) {
+        if (_placement.module(i).isFixed()) continue;
+        int left = _placement.boundryLeft();
+        int width = _placement.boundryRight() - left;
+        int bottom = _placement.boundryBottom();
+        int height = _placement.boundryTop() - bottom;
+        positions[i].x = left + rand() % width;
+        positions[i].y = bottom + rand() % height;
+        _placement.module(i).setPosition(positions[i].x, positions[i].y);
+    }
+    
+    double gamma = 1;
+    Wirelength wirelength(_placement, gamma);
+    wirelength(positions); // update the cache data once
+
+    const double kAlpha = 0.1;                         // Constant step size
+    SimpleConjugateGradient optimizer(wirelength, positions, kAlpha);
+
+    optimizer.Initialize();
+
+    for (size_t i = 0; i < 10000; ++i) {
+        optimizer.Step();
+        if (i % 100 == 0)
+            printf("iter = %3lu, f = %9.4f\n", i, wirelength(positions));
+        for (size_t i = 0; i < num_modules; i++) {
+            if (_placement.module(i).isFixed()) continue;
+            _placement.module(i).setPosition(positions[i].x, positions[i].y);
+        }
+    }
+
 
     ////////////////////////////////////////////////////////////////////
     // Write the placement result into the database. (You may modify this part.)
