@@ -28,24 +28,39 @@ void GlobalPlacer::place() {
         int width = _placement.boundryRight() - left;
         int bottom = _placement.boundryBottom();
         int height = _placement.boundryTop() - bottom;
-        positions[i].x = left + rand() % width;
-        positions[i].y = bottom + rand() % height;
+        positions[i].x = ((double)rand() / RAND_MAX - 0.5) * width * 0.1 + left + 0.5 * width;
+        positions[i].y = ((double)rand() / RAND_MAX - 0.5) * height * 0.1 + bottom + 0.5 * height;
         _placement.module(i).setPosition(positions[i].x, positions[i].y);
     }
     
     double gamma = 1;
-    Wirelength wirelength(_placement, gamma);
-    wirelength(positions); // update the cache data once
+    // Wirelength wirelength(_placement, gamma);
+    Density density(_placement);
 
-    const double kAlpha = 0.1;                         // Constant step size
-    SimpleConjugateGradient optimizer(wirelength, positions, kAlpha);
+    const double kAlpha = 0.001;                         // Constant step size
+    SimpleConjugateGradient optimizer(density, positions, kAlpha);
 
     optimizer.Initialize();
+    
+    auto minmax_x = minmax_element(positions.begin(), positions.end(), [](Point2<double> a, Point2<double> b) {
+        return a.x < b.x;
+    });
+    auto minmax_y = minmax_element(positions.begin(), positions.end(), [](Point2<double> a, Point2<double> b) {
+        return a.y < b.y;
+    });
+    printf("initial: f = %9.4f, min = (%f, %f), max = (%f, %f)\n", density(positions), minmax_x.first->x, minmax_y.first->y, minmax_x.second->x, minmax_y.second->y);
 
-    for (size_t i = 0; i < 10000; ++i) {
+    for (size_t i = 0; i < 1000; ++i) {
         optimizer.Step();
-        if (i % 100 == 0)
-            printf("iter = %3lu, f = %9.4f\n", i, wirelength(positions));
+        if (i % 1 == 0) {
+            auto minmax_x = minmax_element(positions.begin(), positions.end(), [](Point2<double> a, Point2<double> b) {
+                return a.x < b.x;
+            });
+            auto minmax_y = minmax_element(positions.begin(), positions.end(), [](Point2<double> a, Point2<double> b) {
+                return a.y < b.y;
+            });
+            printf("iter = %3lu, f = %9.4f, min = (%f, %f), max = (%f, %f)\n", i, density.value(), minmax_x.first->x, minmax_y.first->y, minmax_x.second->x, minmax_y.second->y);
+        }
         for (size_t i = 0; i < num_modules; i++) {
             if (_placement.module(i).isFixed()) continue;
             _placement.module(i).setPosition(positions[i].x, positions[i].y);

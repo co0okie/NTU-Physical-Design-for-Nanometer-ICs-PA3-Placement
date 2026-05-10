@@ -106,12 +106,28 @@ class Wirelength : public BaseFunction {
 class Density : public BaseFunction {
     // TODO: Implement the density function, add necessary data members for caching
    public:
+    Density(Placement &placement);
+
     /////////////////////////////////
     // Methods
     /////////////////////////////////
 
     const double &operator()(const std::vector<Point2<double>> &input) override;
     const std::vector<Point2<double>> &Backward(const std::vector<Point2<double>> &input) override;
+   private:
+    Placement &placement_;
+    vector<vector<double>> bins; // total overlap area of a bin
+    Point2<double> dim_bin; // x: width, y: height
+    double target_density;
+
+    pair<Point2<int>, Point2<int>> getBeginEndBinIndex(Module& module);
+
+    Point2<double> binBottomLeft(unsigned column, unsigned row) {
+        return Point2<double>(placement_.boundryLeft() + dim_bin.x * column, placement_.boundryBottom() + dim_bin.y * row);
+    }
+    Point2<double> binCenter(unsigned column, unsigned row) {
+        return binBottomLeft(column, row) + dim_bin / 2;
+    }
 };
 
 /**

@@ -15,7 +15,7 @@ BENCHMARK=benchmark/ibm05/ibm05.aux
 all: $(EXE)
 
 run: $(EXE)
-	./$< -aux benchmark/ibm01/ibm01-cu85.aux
+	./$< -aux $(BENCHMARK)
 
 $(EXE): $(OBJS)
 	mkdir -p $(@D)

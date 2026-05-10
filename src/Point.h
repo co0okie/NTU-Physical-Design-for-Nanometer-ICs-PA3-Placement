@@ -204,6 +204,21 @@ struct Point2 {
         return Point2<T>(std::exp(u.x), std::exp(u.y));
     }
 
+    /// Element-wise floor
+    friend Point2<int> Floor(const Point2<T> &u) {
+        return Point2<int>((int)std::floor(u.x), (int)std::floor(u.y));
+    }
+
+    /// Element-wise ceil
+    friend Point2<int> Ceil(const Point2<T> &u) {
+        return Point2<int>((int)std::ceil(u.x), (int)std::ceil(u.y));
+    }
+
+    /// Element-wise abs
+    friend Point2<T> Abs(const Point2<T> &u) {
+        return Point2<T>(std::abs(u.x), std::abs(u.y));
+    }
+
     /// Element-wise minimum
     friend Point2<T> Min(const Point2<T> &u, const Point2<T> &v) {
         return Point2<T>(std::min(u.x, v.x), std::min(u.y, v.y));
