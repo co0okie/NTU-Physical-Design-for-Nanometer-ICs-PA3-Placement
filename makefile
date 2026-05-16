@@ -13,10 +13,24 @@ EXE=bin/place
 # BENCHMARK=benchmark/ibm01/ibm01-cu85.aux
 BENCHMARK=benchmark/ibm05/ibm05.aux
 
+TGZ=b11107051_pa3.tgz
+
 all: $(EXE)
 
 run: $(EXE)
 	./$< -aux $(BENCHMARK)
+
+tgz: $(TGZ)
+
+%.tgz: $(EXE) $(SRCS) $(INCLUDES) makefile readme.txt report/report.pdf
+	temp_dir=$$(mktemp -d); \
+	mkdir -p "$$temp_dir"/$*/src "$$temp_dir"/$*/bin "$$temp_dir"/$*/lib; \
+	cp src/*.h src/*.cpp "$$temp_dir"/$*/src/; \
+	cp lib/* "$$temp_dir"/$*/lib/; \
+	cp $(EXE) "$$temp_dir"/$*/bin/; \
+	cp makefile readme.txt report/report.pdf "$$temp_dir"/$*; \
+	tar zcvf $@ -C "$$temp_dir" $*; \
+	rm -rf "$$temp_dir"
 
 $(EXE): $(OBJS)
 	mkdir -p $(@D)
@@ -28,4 +42,5 @@ $(EXE): $(OBJS)
 -include $(DEPS)
 
 clean:
-	rm -rf src/*.o src/*.d bin
+	rm -rf src/*.o src/*.d bin/ *.dp.pl *.gp.pl *.lg.pl init.plt $(TGZ) \
+	report/report.aux report/report.fdb_latexmk report/report.fls report/report.log report/report.out report/report.synctex.gz report/report.xdv
