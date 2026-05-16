@@ -243,8 +243,7 @@ ObjectiveFunction::ObjectiveFunction(Placement &placement)
 const double& ObjectiveFunction::operator()(const std::vector<Point2<double>>& input) {
     wirelength_(input);
     density_(input);
-    value_ = 0;
-    return value_;
+    return value_ = lambda * wirelength_.value() + (1 - lambda) * density_.value();
 }
 
 const std::vector<Point2<double>>& ObjectiveFunction::Backward(const std::vector<Point2<double>>& input) {
