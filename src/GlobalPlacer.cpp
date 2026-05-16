@@ -63,7 +63,7 @@ void GlobalPlacer::place() {
             // plotPlacementResult( "init.plt", 1 );
             // printDistribution(positions);
             // printDistribution(cost_function.grad());
-            if (overflow_ratio < 0.1) break;
+            if (overflow_ratio < 0.01) break;
         }
         if (i % 500 == 0) {
             // plotPlacementResult( "init.plt", 1 );

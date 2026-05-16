@@ -137,13 +137,21 @@ const double& DensitySigmoid::operator()(const std::vector<Point2<double>>& inpu
 
         auto [begin_index, end_index] = getBeginEndBinIndex(module);
 
+        vector<double> sig_x(end_index.x - begin_index.x + 1);
+        for (int col = begin_index.x; col <= end_index.x; ++col) {
+            double dx = m.x - binCenter(col, 0).x; // Y 座標準代入 0 不影響 X
+            sig_x[col - begin_index.x] = sigmoidDensity(dx, dim_m.x, dim_bin.x);
+        }
+
+        vector<double> sig_y(end_index.y - begin_index.y + 1);
+        for (int row = begin_index.y; row <= end_index.y; ++row) {
+            double dy = m.y - binCenter(0, row).y; 
+            sig_y[row - begin_index.y] = sigmoidDensity(dy, dim_m.y, dim_bin.y);
+        }
+
         for (int col = begin_index.x; col <= end_index.x; ++col) {
             for (int row = begin_index.y; row <= end_index.y; ++row) {
-                auto bin_center = binCenter(col, row);
-                Point2<double> d = m - bin_center;
-
-                bins[col][row] += sigmoidDensity(d.x, dim_m.x, dim_bin.x)
-                                * sigmoidDensity(d.y, dim_m.y, dim_bin.y);
+                bins[col][row] += sig_x[col - begin_index.x] * sig_y[row - begin_index.y];
             }
         }
     }
@@ -178,20 +186,36 @@ const std::vector<Point2<double>>& DensitySigmoid::Backward(const std::vector<Po
         Point2<double> dim_m(module.width(), module.height());
 
         auto [begin_index, end_index] = getBeginEndBinIndex(module);
+
+        vector<double> sig_x(end_index.x - begin_index.x + 1);
+        vector<double> diff_sig_x(end_index.x - begin_index.x + 1);
+        for (int col = begin_index.x; col <= end_index.x; ++col) {
+            double dx = m.x - binCenter(col, 0).x; // Y 座標準代入 0 不影響 X
+            sig_x[col - begin_index.x] = sigmoidDensity(dx, dim_m.x, dim_bin.x);
+            diff_sig_x[col - begin_index.x] = diffSigmoidDensity(dx, dim_m.x, dim_bin.x);
+        }
+
+        vector<double> sig_y(end_index.y - begin_index.y + 1);
+        vector<double> diff_sig_y(end_index.y - begin_index.y + 1);
+        for (int row = begin_index.y; row <= end_index.y; ++row) {
+            double dy = m.y - binCenter(0, row).y; 
+            sig_y[row - begin_index.y] = sigmoidDensity(dy, dim_m.y, dim_bin.y);
+            diff_sig_y[row - begin_index.y] = diffSigmoidDensity(dy, dim_m.y, dim_bin.y);
+        }
+
         for (int col = begin_index.x; col <= end_index.x; ++col) {
             for (int row = begin_index.y; row <= end_index.y; ++row) {
-                auto bin_center = binCenter(col, row);
-                Point2<double> d = m - bin_center;
                 grad_[i] += {
                     max(0., bins[col][row] - 1)
-                        * diffSigmoidDensity(d.x, dim_m.x, dim_bin.x)
-                        * sigmoidDensity(d.y, dim_m.y, dim_bin.y),
+                        * diff_sig_x[col - begin_index.x]
+                        * sig_y[row - begin_index.y],
                     max(0., bins[col][row] - 1)
-                        * sigmoidDensity(d.x, dim_m.x, dim_bin.x)
-                        * diffSigmoidDensity(d.y, dim_m.y, dim_bin.y)
+                        * sig_x[col - begin_index.x]
+                        * diff_sig_y[row - begin_index.y]
                 };
             }
         }
+
         grad_[i] *= dim_bin.x * dim_bin.y;
         // double density_norm = sqrt(grad_[i].x * grad_[i].x + grad_[i].y * grad_[i].y);
         // if (density_norm > 2.) grad_[i] *= 2. / density_norm;
