@@ -25,6 +25,7 @@ const double& Wirelength::operator()(const std::vector<Point2<double>>& input) {
             min_ = Min(min_, {pin.x(), pin.y()});
         }
         Point2<double> gamma = (max_of_net[i] - min_of_net[i]) / 5;
+        gamma = Max(gamma, {1e-6, 1e-6});
         Point2<double> cache;
         Point2<double> num_max(0);
         Point2<double> num_min(0);
@@ -51,10 +52,11 @@ const std::vector<Point2<double>>& input) {
     fill(grad_.begin(), grad_.end(), Point2<double>(0, 0));
     for (unsigned i = 0; i < placement_.numNets(); i++) {
         Net& net = placement_.net(i);
+        Point2<double> gamma = (max_of_net[i] - min_of_net[i]) / 5;
+        gamma = Max(gamma, {1e-6, 1e-6});
         for (unsigned j = 0; j < net.numPins(); j++) {
             Pin& pin = net.pin(j);
             Point2<double> p = {pin.x(), pin.y()};
-            Point2<double> gamma = (max_of_net[i] - min_of_net[i]) / 5;
             grad_[pin.moduleId()] +=
                 Exp((p - max_of_net[i]) / gamma) / denominator_max_of_net[i] *
                 (1 + (p - max_wa_of_net[i]) / gamma)
