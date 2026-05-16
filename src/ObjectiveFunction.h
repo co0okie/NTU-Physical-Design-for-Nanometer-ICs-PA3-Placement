@@ -30,10 +30,10 @@ class BaseFunction {
     /////////////////////////////////
 
     // Forward pass, compute the value of the function
-    virtual const double &operator()(const std::vector<Point2<double>> &input) = 0;
+    virtual const double &operator()(const std::vector<Point2<double>> &input = {}) = 0;
 
     // Backward pass, compute the gradient of the function
-    virtual const std::vector<Point2<double>> &Backward(const std::vector<Point2<double>> &input) = 0;
+    virtual const std::vector<Point2<double>> &Backward(const std::vector<Point2<double>> &input = {}) = 0;
 
    protected:
     /////////////////////////////////
@@ -42,35 +42,6 @@ class BaseFunction {
 
     std::vector<Point2<double>> grad_;  // Gradient of the function
     double value_;                      // Value of the function
-};
-
-/**
- * @brief Example function for optimization
- *
- * This is a simple example function for optimization. The function is defined as:
- *      f(t) = 3*t.x^2 + 2*t.x*t.y + 2*t.y^2 + 7
- */
-class ExampleFunction : public BaseFunction {
-   public:
-    /////////////////////////////////
-    // Constructors
-    /////////////////////////////////
-
-    ExampleFunction(Placement &placement);
-
-    /////////////////////////////////
-    // Methods
-    /////////////////////////////////
-
-    const double &operator()(const std::vector<Point2<double>> &input) override;
-    const std::vector<Point2<double>> &Backward(const std::vector<Point2<double>> &input) override;
-
-   private:
-    /////////////////////////////////
-    // Data members
-    /////////////////////////////////
-
-    Placement &placement_;
 };
 
 /**
@@ -85,8 +56,8 @@ class Wirelength : public BaseFunction {
     // Methods
     /////////////////////////////////
 
-    const double &operator()(const std::vector<Point2<double>> &input) override;
-    const std::vector<Point2<double>> &Backward(const std::vector<Point2<double>> &input) override;
+    const double &operator()(const std::vector<Point2<double>> &input = {}) override;
+    const std::vector<Point2<double>> &Backward(const std::vector<Point2<double>> &input = {}) override;
 
     double gamma; // the smaller gamma is, the more accurate to HPWL
 
@@ -100,34 +71,32 @@ class Wirelength : public BaseFunction {
     vector<Point2<double>> denominator_min_of_net;
 };
 
-/**
- * @brief Density function
- */
-class Density : public BaseFunction {
-    // TODO: Implement the density function, add necessary data members for caching
+class DensitySigmoid : public BaseFunction {
    public:
-    Density(Placement &placement);
+    DensitySigmoid(Placement &placement);
 
-    /////////////////////////////////
-    // Methods
-    /////////////////////////////////
+    const double &operator()(const std::vector<Point2<double>> &input = {}) override;
+    const std::vector<Point2<double>> &Backward(const std::vector<Point2<double>> &input = {}) override;
 
-    const double &operator()(const std::vector<Point2<double>> &input) override;
-    const std::vector<Point2<double>> &Backward(const std::vector<Point2<double>> &input) override;
+    Point2<double> binDim() const { return dim_bin; }
+
+    double overflowRatio() const;
+
    private:
     Placement &placement_;
-    vector<vector<double>> bins; // total overlap area of a bin
+    vector<vector<double>> bins; // total density of a bin
     Point2<double> dim_bin; // x: width, y: height
-    double target_density;
 
+    // get [col, row] from point p
+    Point2<int> binIndex(Point2<double> p) {
+        Point2<double> chip(placement_.boundryLeft(), placement_.boundryBottom());
+        return Floor((p - chip) / dim_bin);
+    }
+    Point2<double> binCenter(unsigned col, unsigned row) {
+        Point2<double> chip(placement_.boundryLeft(), placement_.boundryBottom());
+        return chip + (0.5 + Point2<double>(col, row)) * dim_bin;
+    }
     pair<Point2<int>, Point2<int>> getBeginEndBinIndex(Module& module);
-
-    Point2<double> binBottomLeft(unsigned column, unsigned row) {
-        return Point2<double>(placement_.boundryLeft() + dim_bin.x * column, placement_.boundryBottom() + dim_bin.y * row);
-    }
-    Point2<double> binCenter(unsigned column, unsigned row) {
-        return binBottomLeft(column, row) + dim_bin / 2;
-    }
 };
 
 /**
@@ -142,16 +111,25 @@ class ObjectiveFunction : public BaseFunction {
     // where t is the positions of the modules, and lambda is the penalty weight.
     // You may need an interface to update the penalty weight (lambda) dynamically.
    public:
+    ObjectiveFunction(Placement &placement);
     /////////////////////////////////
     // Methods
     /////////////////////////////////
 
-    const double &operator()(const std::vector<Point2<double>> &input) override;
-    const std::vector<Point2<double>> &Backward(const std::vector<Point2<double>> &input) override;
+    const double &operator()(const std::vector<Point2<double>> &input = {}) override;
+    const std::vector<Point2<double>> &Backward(const std::vector<Point2<double>> &input = {}) override;
+
+    const double wirelengthCost() const { return wirelength_.value(); }
+    const double densityCost() const { return density_.value(); }
+    Point2<double> binDim() const { return density_.binDim(); }
+    double overflowRatio() const { return density_.overflowRatio(); }
+
+    double lambda;
 
    private:
+    Placement &placement_;
     Wirelength wirelength_;
-    Density density_;
+    DensitySigmoid density_;
 };
 
 #endif  // OBJECTIVEFUNCTION_H

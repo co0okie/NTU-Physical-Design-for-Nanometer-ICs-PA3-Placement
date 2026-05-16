@@ -229,6 +229,13 @@ struct Point2 {
         return Point2<T>(std::max(u.x, v.x), std::max(u.y, v.y));
     }
 
+    /// Element-wise minmax
+    friend pair<Point2<T>, Point2<T>> MinMax(const Point2<T> &u, const Point2<T> &v) {
+        auto [min_x, max_x] = std::minmax(u.x, v.x);
+        auto [min_y, max_y] = std::minmax(u.y, v.y);
+        return make_pair(Point2<T>(min_x, min_y), Point2<T>(max_x, max_y));
+    }
+
     /// Element-wise clamp
     friend Point2<T> Clamp(const Point2<T> &u, const Point2<T> &lo, const Point2<T> &hi) {
         return Point2<T>(std::clamp(u.x, lo.x, hi.x), std::clamp(u.y, lo.y, hi.y));

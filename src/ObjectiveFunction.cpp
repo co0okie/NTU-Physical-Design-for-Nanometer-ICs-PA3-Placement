@@ -4,32 +4,8 @@
 #include "cfloat"
 #include "numeric"
 
-ExampleFunction::ExampleFunction(Placement &placement) : BaseFunction(1), placement_(placement)
-{
-    printf("Fetch the information you need from placement database.\n");
-    printf("For example:\n");
-    printf("    Placement boundary: (%.f,%.f)-(%.f,%.f)\n", placement_.boundryLeft(), placement_.boundryBottom(),
-           placement_.boundryRight(), placement_.boundryTop());
-}
-
-const double &ExampleFunction::operator()(const std::vector<Point2<double>> &input)
-{
-    // Compute the value of the function
-    value_ = 3. * input[0].x * input[0].x + 2. * input[0].x * input[0].y +
-             2. * input[0].y * input[0].y + 7.;
-    return value_;
-}
-
-const std::vector<Point2<double>> &ExampleFunction::Backward(const std::vector<Point2<double>> &input)
-{
-    // Compute the gradient of the function
-    grad_[0].x = 6. * input[0].x + 2. * input[0].y;
-    grad_[0].y = 2. * input[0].x + 4. * input[0].y;
-    return grad_;
-}
-
 Wirelength::Wirelength(Placement& placement, double gamma) 
-: BaseFunction(placement.numModules()), placement_(placement), gamma(gamma),
+: BaseFunction(placement.numModules()), gamma(gamma), placement_(placement), 
   max_of_net(placement.numNets()), min_of_net(placement.numNets()),
   max_wa_of_net(placement.numNets()), min_wa_of_net(placement.numNets()),
   denominator_max_of_net(placement.numNets()), denominator_min_of_net(placement.numNets()) {
@@ -90,157 +66,198 @@ const std::vector<Point2<double>>& input) {
     return grad_;
 }
 
-Density::Density(Placement& placement) 
-: BaseFunction(placement.numModules()), placement_(placement) {
-
-    double total_module_area = 0;
-    for (unsigned i = 0; i < placement.numModules(); i++) {
-        total_module_area += placement.module(i).area();
-    }
-    double chip_area = (placement.boundryRight() - placement.boundryLeft()) * 
-        (placement.boundryTop() - placement.boundryBottom());
-    target_density = total_module_area / chip_area;
-    
+DensitySigmoid::DensitySigmoid(Placement& placement)
+: BaseFunction(placement.numModules()), placement_(placement){
     // creating the bin grid
     vector<unsigned> modules(placement.numModules());
-    iota(modules.begin(), modules.end(), 0);
-    sort(modules.begin(), modules.end(), [&](unsigned a, unsigned b) {
-        return placement.module(a).width() < placement.module(b).width();
-    });
-    double width_medium = placement.numModules() > 0 ? 
-        placement.module(placement.numModules() / 2).width() : 0;
-    sort(modules.begin(), modules.end(), [&](unsigned a, unsigned b) {
-        return placement.module(a).height() < placement.module(b).height();
-    });
-    double height_medium = placement.numModules() > 0 ? 
-        placement.module(placement.numModules() / 2).height() : 0;
+    Point2<double> module_dim_min = {DBL_MAX, DBL_MAX};
+    Point2<double> module_dim_avg = {0, 0};
+    for (unsigned i = 0; i < placement.numModules(); i++) {
+        Module& module = placement.module(i);
+        if (module.isFixed()) continue;
+        if (module.width() != 0) module_dim_min.x = min(module_dim_min.x, module.width());
+        if (module.height() != 0) module_dim_min.y = min(module_dim_min.y, module.height());
+        module_dim_avg += {module.width(), module.height()};
+    }
+    module_dim_avg /= placement.numModules();
+    printf("avg module width: %f, height: %f\n", module_dim_avg.x, module_dim_avg.y);
+    // printf("width_min: %f, height_min: %f\n", module_dim_min.x, module_dim_min.y);
+
     double chip_width = placement.boundryRight() - placement.boundryLeft();
     double chip_height = placement.boundryTop() - placement.boundryBottom();
-    unsigned column_count = max(1, (int)round(chip_width / (2 * width_medium)));
-    unsigned row_count = max(1, (int)round(chip_height / (2 * height_medium)));
+    unsigned column_count = max(1, (int)round(chip_width / (2 * module_dim_avg.x)));
+    unsigned row_count = max(1, (int)round(chip_height / (2 * module_dim_avg.y)));
     bins.assign(column_count, vector<double>(row_count, 0));
     dim_bin.x = chip_width / column_count;
     dim_bin.y = chip_height / row_count;
 
     printf("total bins: %d * %d = %d\n", column_count, row_count, column_count * row_count);
-    printf("target density: %f\n", target_density);
 }
 
-pair<Point2<int>, Point2<int>> Density::getBeginEndBinIndex(Module& module) {
-    int num_cols = bins.size();
-    int num_rows = num_cols ? bins[0].size() : 0;
+pair<Point2<int>, Point2<int>> DensitySigmoid::getBeginEndBinIndex(Module& module) {
+    Point2<int> n_bins(bins.size(), bins[0].size());
+    auto [dim_min, dim_max] = MinMax({module.width(), module.height()}, dim_bin);
+    auto d_max = 0.5 * dim_max + 1.5 * dim_min;
     Point2<double> m(module.centerX(), module.centerY());
-    Point2<double> dim_m(module.width(), module.height());
-    Point2<double> boundry(placement_.boundryLeft(), placement_.boundryBottom());
-
-    Point2<double> max_dist = (dim_m / 2.0) + 2.0 * dim_bin;
-    Point2<double> begin = m - max_dist;
-    Point2<double> end = m + max_dist;
-
-    Point2<int> begin_index = Ceil((begin - boundry) / dim_bin - 0.5);
-    Point2<int> end_index = Floor((end - boundry) / dim_bin - 0.5);
-
-    begin_index = Max(begin_index, Point2<int>(0, 0));
-    end_index = Min(end_index, Point2<int>(num_cols - 1, num_rows - 1));
-
+    Point2<int> begin_index = Clamp(binIndex(m - d_max), {0, 0}, n_bins - 1);
+    Point2<int> end_index = Clamp(binIndex(m + d_max), {0, 0}, n_bins - 1);
     return make_pair(begin_index, end_index);
 }
 
-// return min(width(module), width(bin)) * p_x(bin, module)
-// d = |centerX(module) - centerX(bin)|
-// dim_m: width of module
-// dim_bin: width of bin
-double bell_shape(double d, double dim_m, double dim_bin) {
-    double ret = dim_m * dim_bin / (2 / 3 * dim_m + 2 * dim_bin);
-    double a = 4 / (dim_m + 2 * dim_bin) / (dim_m + 4 * dim_bin);
-    double b = 2 / dim_bin / (dim_m + 4 * dim_bin);
-    if (d < dim_m / 2 + dim_bin) {
-        ret *= 1 - a * d * d;
-    } else if (d < dim_m / 2 + 2 * dim_bin) {
-        double t = (d - dim_m / 2 - 2 * dim_bin);
-        ret *= b * t * t;
-    } else {
-        ret *= 0;
-    }
-    return ret;
+double sigmoid(double x) {
+    if (x < -100.0) return 0.0;
+    if (x > 100.0) return 1.0;
+    return 1. / (1. + exp(-4 * x));
 }
 
-// return ∂bell_shape / ∂d
-// m: center of module
-// bin: center of bin
-// dim_m: width of module
-// dim_m: width of bin
-double grad_bell_shape(double m, double bin, double dim_m, double dim_bin) {
-    double ret = dim_m * dim_bin / (2 / 3 * dim_m + 2 * dim_bin);
-    double a = 4 / (dim_m + 2 * dim_bin) / (dim_m + 4 * dim_bin);
-    double b = 2 / dim_bin / (dim_m + 4 * dim_bin);
-    double sign = (bin < m) - (m < bin);
-    double d = abs(m - bin);
-    if (d < dim_m / 2 + dim_bin) {
-        ret *= -2 * a * d * sign;
-    } else if (d < dim_m / 2 + 2 * dim_bin) {
-        ret *= 2 * b * (d - dim_m / 2 - 2 * dim_bin) * sign;
-    } else {
-        ret *= 0;
-    }
-    return ret;
+/// @brief 1D density model using sigmoid function
+/// @param x difference between position of module and bin center
+/// @param wm width/height of module
+/// @param wb width/height of bin
+/// @return 
+double sigmoidDensity(double x, double wm, double wb) {
+    auto [w_min, w_max] = minmax(wm, wb);
+    double left = sigmoid((x + 0.5 * w_max) / w_min);
+    double right = sigmoid((x - 0.5 * w_max) / w_min);
+    return w_min / wb * (left - right);
 }
 
-const double& Density::operator()(const std::vector<Point2<double>>& input) {
+const double& DensitySigmoid::operator()(const std::vector<Point2<double>>& input) {
     value_ = 0;
     for (auto& col : bins) fill(col.begin(), col.end(), 0);
-    int num_cols = bins.size();
-    int num_rows = num_cols ? bins[0].size() : 0;
-    double target_overlap_area = target_density * dim_bin.x * dim_bin.y;
+    int n_cols = bins.size();
+    int n_rows = n_cols ? bins[0].size() : 0;
     for (unsigned i = 0; i < placement_.numModules(); i++) {
         Module& module = placement_.module(i);
 
         Point2<double> m(module.centerX(), module.centerY());
         Point2<double> dim_m(module.width(), module.height());
 
-        auto bin_index = getBeginEndBinIndex(module);
+        auto [begin_index, end_index] = getBeginEndBinIndex(module);
 
-        // printf("module (%f, %f), dim: (%f, %f)", m.x, m.y, dim_m.x, dim_m.y);
-        // printf(", bin index: (%d, %d) - (%d, %d)\n", bin_index.first.x, bin_index.first.y, bin_index.second.x, bin_index.second.y);
+        for (int col = begin_index.x; col <= end_index.x; ++col) {
+            for (int row = begin_index.y; row <= end_index.y; ++row) {
+                auto bin_center = binCenter(col, row);
+                Point2<double> d = m - bin_center;
 
-        for (int j = bin_index.first.x; j <= bin_index.second.x; ++j) {
-            for (int k = bin_index.first.y; k <= bin_index.second.y; ++k) {
-                auto bin_center = binCenter(j, k);
-                Point2<double> d = Abs(bin_center - m);
-
-                bins[j][k] += bell_shape(d.x, dim_m.x, dim_bin.x)
-                            * bell_shape(d.y, dim_m.y, dim_bin.y);
+                bins[col][row] += sigmoidDensity(d.x, dim_m.x, dim_bin.x)
+                                * sigmoidDensity(d.y, dim_m.y, dim_bin.y);
             }
         }
     }
-    for (int i = 0; i < num_cols; ++i) {
-        for (int j = 0; j < num_rows; ++j) {
-            double d_area = bins[i][j] - target_overlap_area;
-            value_ += d_area * d_area;
+    for (int col = 0; col < n_cols; ++col) {
+        for (int row = 0; row < n_rows; ++row) {
+            double exceed_density = max(0., bins[col][row] - 1);
+            value_ += exceed_density * exceed_density;
         }
     }
+    return value_ *= 0.5;
+}
+
+double diffSigmoid(double x) {
+    double y = sigmoid(x);
+    return 4 * y * (1 - y);
+}
+
+double diffSigmoidDensity(double x, double wm, double wb) {
+    auto [w_min, w_max] = minmax(wm, wb);
+    double left = diffSigmoid((x + 0.5 * w_max) / w_min);
+    double right = diffSigmoid((x - 0.5 * w_max) / w_min);
+    return 1 / wb * (left - right);
+}
+
+const std::vector<Point2<double>>& DensitySigmoid::Backward(const std::vector<Point2<double>>& input) {
+    fill(grad_.begin(), grad_.end(), Point2<double>(0, 0));
+    for (unsigned i = 0; i < placement_.numModules(); i++) {
+        Module& module = placement_.module(i);
+        if (module.isFixed()) continue;
+
+        Point2<double> m(module.centerX(), module.centerY());
+        Point2<double> dim_m(module.width(), module.height());
+
+        auto [begin_index, end_index] = getBeginEndBinIndex(module);
+        for (int col = begin_index.x; col <= end_index.x; ++col) {
+            for (int row = begin_index.y; row <= end_index.y; ++row) {
+                auto bin_center = binCenter(col, row);
+                Point2<double> d = m - bin_center;
+                grad_[i] += {
+                    max(0., bins[col][row] - 1)
+                        * diffSigmoidDensity(d.x, dim_m.x, dim_bin.x)
+                        * sigmoidDensity(d.y, dim_m.y, dim_bin.y),
+                    max(0., bins[col][row] - 1)
+                        * sigmoidDensity(d.x, dim_m.x, dim_bin.x)
+                        * diffSigmoidDensity(d.y, dim_m.y, dim_bin.y)
+                };
+            }
+        }
+        grad_[i] *= dim_bin.x * dim_bin.y;
+        // double density_norm = sqrt(grad_[i].x * grad_[i].x + grad_[i].y * grad_[i].y);
+        // if (density_norm > 2.) grad_[i] *= 2. / density_norm;
+    }
+    return grad_;
+}
+
+double DensitySigmoid::overflowRatio() const {
+    return accumulate(bins.begin(), bins.end(), 0., [&](const double a, const vector<double>& b) {
+        return a + accumulate(b.begin(), b.end(), 0., [&](const double a, const double b) {
+            return a + max(0., b - 1);
+        });
+    }) / bins.size() / bins[0].size();
+}
+
+ObjectiveFunction::ObjectiveFunction(Placement &placement) 
+: BaseFunction(placement.numModules()), placement_(placement), wirelength_(placement, 1), density_(placement) {
+    wirelength_();
+    wirelength_.Backward();
+    density_();
+    density_.Backward();
+    lambda = 1;
+}
+
+const double& ObjectiveFunction::operator()(const std::vector<Point2<double>>& input) {
+    wirelength_(input);
+    density_(input);
+    value_ = 0;
     return value_;
 }
 
-const std::vector<Point2<double>>& Density::Backward(const std::vector<Point2<double>>& input) {
-    fill(grad_.begin(), grad_.end(), Point2<double>(0, 0));
-    double target_overlap_area = target_density * dim_bin.x * dim_bin.y;
+const std::vector<Point2<double>>& ObjectiveFunction::Backward(const std::vector<Point2<double>>& input) {
+    wirelength_.Backward(input);
+    density_.Backward(input);
+    Point2<double> chip(placement_.boundryRight() - placement_.boundryLeft(), 
+        placement_.boundryTop() - placement_.boundryBottom());
+    double step = sqrt(density_.binDim().x * density_.binDim().y) * 0.6;
+    double max_density_grad_norm = -DBL_MAX;
+    double max_wirelength_grad_norm = -DBL_MAX;
+    for (unsigned i = 0; i < placement_.numModules(); i++) {
+        if (placement_.module(i).isFixed()) continue;
+        auto gw = wirelength_.grad()[i];
+        auto gd = density_.grad()[i];
+        max_wirelength_grad_norm = max(max_wirelength_grad_norm, gw.x * gw.x + gw.y * gw.y);
+        max_density_grad_norm = max(max_density_grad_norm, gd.x * gd.x + gd.y * gd.y);
+    }
+    max_wirelength_grad_norm = sqrt(max_wirelength_grad_norm);
+    max_density_grad_norm = sqrt(max_density_grad_norm);
+    double wirelength_scale = max_wirelength_grad_norm > 1e-12 ? 
+        lambda / max_wirelength_grad_norm : 0;
+    double density_scale = max_density_grad_norm > 1e-12 ? 
+        (1 - lambda) / max_density_grad_norm : 0;
     for (unsigned i = 0; i < placement_.numModules(); i++) {
         Module& module = placement_.module(i);
-        Point2<double> m(module.centerX(), module.centerY());
-        auto bin_index = getBeginEndBinIndex(module);
-        for (int j = bin_index.first.x; j <= bin_index.second.x; ++j) {
-            for (int k = bin_index.first.y; k <= bin_index.second.y; ++k) {
-                auto bin_center = binCenter(j, k);
-                Point2<double> d = Abs(bin_center - m);
-                grad_[i].x += 2 * (bins[j][k] - target_overlap_area) 
-                    * bell_shape(d.y, module.height(), dim_bin.y)
-                    * grad_bell_shape(m.x, bin_center.x, module.width(), dim_bin.x);
-                grad_[i].y += 2 * (bins[j][k] - target_overlap_area) 
-                    * bell_shape(d.x, module.width(), dim_bin.x)
-                    * grad_bell_shape(m.y, bin_center.y, module.height(), dim_bin.y);
-            }
+        if (module.isFixed()) {
+            grad_[i] = {0, 0};
+            continue;
         }
+        Point2<double> out_of_bound_cost = {
+            min(0., module.centerX() - placement_.boundryLeft() - 0.5 * density_.binDim().x) +
+            max(0., module.centerX() - placement_.boundryRight() + 0.5 * density_.binDim().x),
+            min(0., module.centerY() - placement_.boundryBottom() - 0.5 * density_.binDim().y) +
+            max(0., module.centerY() - placement_.boundryTop() + 0.5 * density_.binDim().y)
+        };
+        grad_[i] = (
+            wirelength_.grad()[i] * wirelength_scale +
+            density_.grad()[i] * density_scale
+        ) * step + 0.5 * out_of_bound_cost;
     }
     return grad_;
 }

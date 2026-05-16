@@ -2,6 +2,7 @@
 
 CXX=g++
 CXXFLAGS=-std=c++17 -static -O3 -Wall -MMD -MP -D_GLIBCXX_ISE_CXX11_ABI=1
+# CXXFLAGS=-std=c++17 -static -O0 -g -Wall -MMD -MP -D_GLIBCXX_ISE_CXX11_ABI=1
 LDFLAGS=-Llib -lDetailPlace -lGlobalPlace -lLegalizer -lPlacement -lParser -lPlaceCommon
 SRCS=src/ObjectiveFunction.cpp src/Optimizer.cpp src/GlobalPlacer.cpp src/main.cpp
 OBJS=$(SRCS:.cpp=.o)

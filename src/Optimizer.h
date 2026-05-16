@@ -47,7 +47,7 @@ class SimpleConjugateGradient : public BaseOptimizer {
     // Constructors
     /////////////////////////////////
 
-    SimpleConjugateGradient(BaseFunction &obj, std::vector<Point2<double>> &var, const double &alpha);
+    SimpleConjugateGradient(BaseFunction &obj, std::vector<Point2<double>> &var);
 
     /////////////////////////////////
     // Methods
@@ -69,7 +69,6 @@ class SimpleConjugateGradient : public BaseOptimizer {
     std::vector<Point2<double>> dir_prev_;   // Direction of the previous step,
                                              // i.e., d_{k-1} in the NTUPlace3 paper
     size_t step_;                            // Current step number
-    double alpha_;                           // Step size
 };
 
 // TODO(Optional): Implement your own optimizer.

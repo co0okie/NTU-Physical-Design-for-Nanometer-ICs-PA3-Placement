@@ -3,13 +3,11 @@
 #include <cmath>
 
 SimpleConjugateGradient::SimpleConjugateGradient(BaseFunction &obj,
-                                                 std::vector<Point2<double>> &var,
-                                                 const double &alpha)
+                                                 std::vector<Point2<double>> &var)
     : BaseOptimizer(obj, var),
       grad_prev_(var.size()),
       dir_prev_(var.size()),
-      step_(0),
-      alpha_(alpha) {}
+      step_(0) {}
 
 void SimpleConjugateGradient::Initialize() {
     // Before the optimization starts, we need to initialize the optimizer.
@@ -41,12 +39,17 @@ void SimpleConjugateGradient::Step() {
         double t1 = 0.;  // Store the numerator of beta
         double t2 = 0.;  // Store the denominator of beta
         for (size_t i = 0; i < kNumModule; ++i) {
-            Point2<double> t3 =
-                obj_.grad().at(i) * (obj_.grad().at(i) - grad_prev_.at(i));
-            t1 += t3.x + t3.y;
-            t2 += std::abs(obj_.grad().at(i).x) + std::abs(obj_.grad().at(i).y);
+            // Numerator: g_k^T * (g_k - g_{k-1})
+            Point2<double> diff = obj_.grad().at(i) - grad_prev_.at(i);
+            t1 += obj_.grad().at(i).x * diff.x + obj_.grad().at(i).y * diff.y;
+            
+            // Denominator: g_{k-1}^T * g_{k-1}
+            t2 += grad_prev_.at(i).x * grad_prev_.at(i).x + 
+                  grad_prev_.at(i).y * grad_prev_.at(i).y;
         }
-        beta = t1 / (t2 * t2);
+        
+        beta = t1 / t2;
+        if (beta < 0. || beta > 3.) beta = 0;
         for (size_t i = 0; i < kNumModule; ++i) {
             dir[i] = -obj_.grad().at(i) + beta * dir_prev_.at(i);
         }
@@ -58,7 +61,7 @@ void SimpleConjugateGradient::Step() {
     // Update the solution
     // Please be aware of the updating directions, i.e., the sign for each term.
     for (size_t i = 0; i < kNumModule; ++i) {
-        var_[i] = var_[i] + alpha_ * dir[i];
+        var_[i] = var_[i] + dir[i];
     }
 
     // Update the cache data members
