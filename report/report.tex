@@ -1,0 +1,141 @@
+\documentclass[12pt]{article}
+\usepackage[margin=2cm]{geometry}
+
+\usepackage{graphicx}
+\usepackage{amsmath}
+
+\usepackage{xeCJK}
+\setmainfont{Times New Roman}
+\setCJKmainfont[AutoFakeBold=true,AutoFakeSlant=true]{TW-Kai}
+\renewcommand\contentsname{目錄}
+\renewcommand\listfigurename{圖目錄}
+\renewcommand\listtablename{表目錄}
+\renewcommand\abstractname{摘要}
+\renewcommand\figurename{圖}
+\renewcommand\tablename{表}
+\renewcommand\refname{參考文獻}
+
+\usepackage{indentfirst}
+\setlength{\parindent}{0em}
+
+\usepackage[hidelinks]{hyperref}
+\newcommand*{\fullref}[1]{\hyperref[{#1}]{\ref*{#1} \nameref*{#1}}}
+
+\renewcommand{\figureautorefname}{圖}
+\renewcommand\tableautorefname{表}
+
+\DeclareMathOperator{\WA}{WA}
+
+\begin{document}
+
+\title{Physical Design for Nanometer ICs \ PA3: Global Placement}
+\author{台科大 B11107051 李品翰}
+\date{}
+\maketitle
+
+此作業主要基於 analytical placement 方法進行實作與優化。
+
+\section{Wirelength Model}
+
+採用 weighted average 模型來平滑化近似 $\max$ 函數。為避免指數運算產生 overflow 並提升數值穩定性，在計算指數前統一減去最大值：
+
+$$\WA(\mathbf x) = {\sum\limits_{x \in \mathbf x} x \exp\left({x - \max(\mathbf x) \over \gamma} \right) \over \sum\limits_{x \in \mathbf x} \exp\left({x - \max(\mathbf x) \over \gamma} \right)}$$
+
+Wirelength Cost 定義為：
+
+$$W(\mathbf x, \mathbf y) = \sum_{e \in E} \underset{p \in e}{\WA}(x_p) + \underset{p \in e}{\WA}(-x_p) + \underset{p \in e}{\WA}(y_p) + \underset{p \in e}{\WA}(-y_p)$$
+
+其中，$N$ 為所有 Net 的集合，$p$ 代表 Net 上的一個 Pin。
+
+\section{Density Model}
+
+使用 sigmoid 函數來平滑化密度分佈，並將其斜率調整為 $\sigma'(0) = 1$：
+
+$$\sigma(x) = {1 \over 1 + e^{-4x}}$$
+
+針對一維的 overlap density，定義為：
+
+$$O(x, w_{module}, w_{bin}) = {w_{min} \over w_{bin}} \left[\sigma\left({x + 0.5 w_{max} \over w_{min}}\right) - \sigma\left({x - 0.5 w_{max} \over w_{min}}\right)\right]$$
+
+$$w_{min} = \min(w_{module}, w_{bin}), \quad w_{max} = \max(w_{module}, w_{bin})$$
+
+對於給定的 bin $b \in B$，其內部存放的所有 module 總密度為：
+
+$$d_b(\mathbf x, \mathbf y) = \sum_{m \in M} O(x_m - x_b, w_m, w_b) \cdot O(y_m - y_b, h_m, h_b)$$
+
+其中，$M$ 為所有 module 的集合，$w$ 為寬度，$h$ 為高度。
+
+考量到後續 legalization 階段僅需 module 足夠分散即可順利進行，因此直接將 target density 設為 1，並引入 $\max$ 函數，確保密度低於 1 的空白區域不會產生額外的懲罰。最終 density cost 定義如下：
+
+$$D(\mathbf x, \mathbf y) = \sum_{b \in B}\frac12\max(0, d_b(\mathbf x, \mathbf y) - 1)^2$$
+
+\subsection{Bin Size}
+
+在設計 bin 尺寸時，若 $w_b < w_m$，當 module 在兩個密度相等的相鄰 bin 之間移動時，由於 sigmoid 函數的覆蓋平滑範圍小於 module 的寬度，兩者的重疊面積總和無法保持常數，即 partition of unity 不成立。這會導致總密度在交界處產生微小的波動，形成虛假梯度並產生溝槽效應，進而使最終的 placement 結果出現不自然的十字網狀排列。
+
+相反地，當 $w_b \ge w_m$ 時，module 移動時其覆蓋在各 bin 的重疊面積總和近乎守恆，在等密度區域中的受力會完美抵消，呈現平坦的受力分佈，讓 module 能夠平滑且自然地擴散。因此本作業最終將 bin size 設定為：
+
+$$w_b \approx 2 \min_{m \in M} w_m, \quad h_b \approx 2 \min_{m \in M} h_m$$
+
+實作上會微調 $w_b, h_b$ 的數值，使其能被晶片的長寬整除以利網格劃分。
+
+\subsection{Module 影響的 Bins 範圍}
+
+在此定義的密度函數中，module 的邊界發生在距離中心 $0.5 w_{max}$ 的位置。超過此邊界後，重疊面積與梯度會以 sigmoid 的尾部函數迅速衰減，其衰減率主要受 $\frac{1}{1 + e^{-4x}}$ 控制，其中 $x$ 代表超過邊界後以 $w_{min}$ 為單位的延伸距離。
+
+當設定延伸距離為 $k = 1.5$ 時，其誤差已降至約 $0.25\%$，此時梯度極小，幾乎可以忽略不計。為確保梯度的精確度同時避免對大型 macro 周圍的無效 bin 進行多餘運算，將搜尋範圍的邊界動態設定如下：
+
+$$\Delta x = 0.5 w_{max} + k w_{min}$$
+$$x_{begin} = x_m - \Delta x, \quad x_{end} = x_m + \Delta x$$
+
+此作業中設定 $k = 1.5$，y方向同理。
+
+\section{Out of Bound Cost}
+
+在實作過程中，我觀察到 module 容易過度擠壓在晶片邊界處。探究其原因，是因為邊界內側的 bin 會產生向外的排斥力，而一旦 module 稍微超出邊界，又會受到向內的拉力; 從 cost function 的地形來看，邊界處形成了一道深溝，導致 module 卡在其中難以脫身。
+
+為了解決這個問題，我將越界懲罰的邊界向內移動了半個 bin size，使 module 從觸碰到 bin 的中心開始就會逐漸感受到懲罰推力，從而平滑地將 module 留在合法區域內：
+
+$$C_{out}(\mathbf x, \mathbf y) = \sum_{x \in \mathbf x, y \in \mathbf y}\frac12\left\{\begin{aligned} 
+&\min\left(0, x - x_{left} - 0.5 w_b\right)^2 + \max\left(0, x - x_{right} + 0.5 w_b\right)^2 \\ 
++&\min\left(0, y - y_{bottom} - 0.5 h_b\right)^2 + \max\left(0, y - y_{top} + 0.5 h_b\right)^2 
+\end{aligned}\right\}$$
+
+其中，$x_{left}, x_{right}, y_{bottom}, y_{top}$ 為晶片合法區域的邊界。
+
+\section{Objective Function}
+
+總目標函數為最小化以下數值：
+
+$$F(\mathbf x, \mathbf y) = \lambda W(\mathbf x, \mathbf y) + (1 - \lambda) D(\mathbf x, \mathbf y) + \alpha C_{out}(\mathbf x, \mathbf y)$$
+
+其中 $\lambda$ 的初始值為 1，並在每個 iteration 中逐漸衰減 ($\lambda_{n+1} = \beta \lambda_{n}, \beta \approx 0.999$)。此作法與講義中使用的 $\lambda'$ 稍有不同，但兩者在數學上可等效轉換為 $\lambda' = {1 - \lambda \over \lambda}$。採用此設定的好處是可以避免 $\lambda'$ 不斷翻倍而導致數值過大。
+
+參數 $\alpha$ 則用於控制邊界懲罰的力度，避免懲罰過於強烈而影響整體 placement 品質，此作業中設定 $\alpha = 0.5$。
+
+\section{Gradient}
+
+由於演算法初期所有 module 皆集中於晶片中央，導致 density gradient 異常巨大。為了提升數值穩定性與方便控制步長，我將兩者的梯度分別進行 normalize，接著以 $\lambda$ 分配權重比例，最後統一乘上 step size $s$：
+
+$$\nabla F = s \left[\lambda {\nabla W \over A_W} + (1 - \lambda) {\nabla D \over A_D}\right] + \alpha \nabla C_{out}$$
+
+$$A_W = \max\limits_{m \in M} \left\lVert {\partial W \over \partial (x_m, y_m)} \right\rVert_2, \quad A_D = \max\limits_{b \in B} \left\lVert {\partial D \over \partial (x_b, y_b)} \right\rVert_2$$
+
+$$s = k\sqrt{w_bh_b}$$
+
+step size $s$ 與 bin size 相關，比例常數 $k$ 在此作業中設定為 0.6。
+
+\subsection{固定的 Lambda 之探討}
+
+在設計演算法之初，我曾思考是否能找到一個固定的 $\lambda$，使得 wirelength gradient 較大的 module 可以恰好抵消其 density gradient，僅讓 wirelength 較小的 module 向外擴散，從而逐漸降低 overflow ratio。然而，實驗結果證實，當 $\lambda$ 為定值時，最終的 overflow ratio 會收斂並停滯在某個下限值。事實上，在當前的固定 $\lambda$ 下，系統已經找到該地形下合理的最佳解。必須持續動態地調整 $\lambda$，相當於改變目標函數的地形，才能引導 module 往 density 更低的方向前進，完成全域的分散。
+
+\section{Optimizer}
+
+本作業最終採用帶有 momentum 的梯度下降法，其更新公式如下：
+
+$$\mathbf g_{n+1} = \nabla F + 0.9\ \mathbf g_{n}$$
+$$\mathbf g_{0} = \mathbf 0$$
+
+最初嘗試使用 conjugate gradient，但在實作中發現，由於權重 $\lambda$ 每回合都在動態衰減，加上梯度被強制 normalize，目標函數的地形不斷改變。在這種環境下，計算出的共軛方向係數 $\beta$ 會越來越大，引發數值爆炸與優化震盪。相較之下，改用簡單的 momentum 可以避免此問題，並確保演算法穩定收斂。
+
+\end{document}
