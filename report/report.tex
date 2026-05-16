@@ -73,9 +73,9 @@ $$D(\mathbf x, \mathbf y) = \sum_{b \in B}\frac12\max(0, d_b(\mathbf x, \mathbf 
 
 在設計 bin 尺寸時，若 $w_b < w_m$，當 module 在兩個密度相等的相鄰 bin 之間移動時，由於 sigmoid 函數的覆蓋平滑範圍小於 module 的寬度，兩者的重疊面積總和無法保持常數，即 partition of unity 不成立。這會導致總密度在交界處產生微小的波動，形成虛假梯度並產生溝槽效應，進而使最終的 placement 結果出現不自然的十字網狀排列。
 
-相反地，當 $w_b \ge w_m$ 時，module 移動時其覆蓋在各 bin 的重疊面積總和近乎守恆，在等密度區域中的受力會完美抵消，呈現平坦的受力分佈，讓 module 能夠平滑且自然地擴散。因此本作業最終將 bin size 設定為：
+相反地，當 $w_b \ge w_m$ 時，module 移動時其覆蓋在各 bin 的重疊面積總和近乎守恆，在等密度區域中的受力會完美抵消，呈現平坦的受力分佈，讓 module 能夠平滑且自然地擴散。因此本作業最終將 bin size 設定為 2 倍 module 寬高平均值：
 
-$$w_b \approx 2 \min_{m \in M} w_m, \quad h_b \approx 2 \min_{m \in M} h_m$$
+$$w_b \approx 2 \langle w_m \rangle_{m \in M}, \quad h_b \approx 2 \langle h_m \rangle_{m \in M}$$
 
 實作上會微調 $w_b, h_b$ 的數值，使其能被晶片的長寬整除以利網格劃分。
 
